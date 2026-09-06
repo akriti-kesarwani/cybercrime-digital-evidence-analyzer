@@ -45,6 +45,14 @@ interface DetectionAlert {
   detection_rule: string;
 }
 
+async function fingerprint(value: unknown): Promise<string> {
+  const bytes = new TextEncoder().encode(JSON.stringify(value));
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
 // ============================================================
 // PARSERS — each converts a file format into normalized events
 // ============================================================
@@ -605,6 +613,7 @@ Deno.serve(async (req: Request) => {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
 
+  let processingEvidenceId: string | null = null;
   try {
     const { evidence_id, case_id } = await req.json();
 
@@ -615,10 +624,37 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-    );
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const authorization = req.headers.get("Authorization");
+    if (!supabaseUrl || !anonKey || !serviceRoleKey || !authorization?.startsWith("Bearer ")) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const callerClient = createClient(supabaseUrl, anonKey, {
+      global: { headers: { Authorization: authorization } },
+    });
+    const { data: callerData, error: callerError } = await callerClient.auth.getUser();
+    if (callerError || !callerData.user) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const supabase = createClient(supabaseUrl, serviceRoleKey);
+    const { data: callerProfile, error: profileError } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", callerData.user.id)
+      .maybeSingle();
+    if (profileError || !callerProfile || !["ADMIN", "INVESTIGATOR"].includes(callerProfile.role)) {
+      return new Response(JSON.stringify({ error: "Forbidden" }), {
+        status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     // 1. Fetch evidence record
     const { data: evidence, error: evidenceError } = await supabase
@@ -633,6 +669,41 @@ Deno.serve(async (req: Request) => {
         { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+    if (evidence.case_id !== case_id) {
+      return new Response(JSON.stringify({ error: "Evidence does not belong to this case" }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const { data: requestedCase, error: caseError } = await supabase
+      .from("cases").select("id").eq("id", case_id).maybeSingle();
+    if (caseError || !requestedCase) {
+      return new Response(JSON.stringify({ error: "Case not found" }), {
+        status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    if (evidence.analysis_status === "COMPLETED") {
+      return new Response(JSON.stringify({ success: true, message: "Evidence has already been analyzed." }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const { data: claimedEvidence, error: claimError } = await supabase
+      .from("evidence")
+      .update({
+        analysis_status: "PROCESSING",
+        analysis_error: null,
+        analysis_started_at: new Date().toISOString(),
+      })
+      .eq("id", evidence_id)
+      .in("analysis_status", ["PENDING", "FAILED"])
+      .select("id")
+      .maybeSingle();
+    if (claimError) throw claimError;
+    if (!claimedEvidence) {
+      return new Response(JSON.stringify({ error: "Evidence analysis is already in progress" }), {
+        status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    processingEvidenceId = evidence_id;
 
     // 2. Download file from storage
     const { data: fileData, error: downloadError } = await supabase.storage
@@ -640,23 +711,46 @@ Deno.serve(async (req: Request) => {
       .download(evidence.storage_path);
 
     if (downloadError || !fileData) {
-      return new Response(
-        JSON.stringify({ error: "Failed to download evidence file" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      throw new Error("Failed to download evidence file");
     }
 
     const content = await fileData.text();
+    const fileBytes = await fileData.arrayBuffer();
+    const allowedFileTypes = [".txt", ".log", ".csv", ".json"];
+    if (!allowedFileTypes.includes(evidence.file_type) || fileBytes.byteLength > 10 * 1024 * 1024) {
+      throw new Error("Evidence file type or size is not allowed");
+    }
+    if (fileBytes.byteLength !== Number(evidence.file_size)) {
+      throw new Error("Evidence file size does not match its metadata");
+    }
+    const hashBuffer = await crypto.subtle.digest("SHA-256", fileBytes);
+    const actualHash = Array.from(new Uint8Array(hashBuffer))
+      .map((byte) => byte.toString(16).padStart(2, "0")).join("");
+    if (actualHash !== evidence.sha256_hash) {
+      await supabase.from("evidence").update({
+        analysis_status: "FAILED",
+        analysis_error: "Evidence hash mismatch",
+        integrity_status: "COMPROMISED",
+        verified_sha256_hash: actualHash,
+      }).eq("id", evidence_id);
+      return new Response(JSON.stringify({ error: "Evidence integrity verification failed" }), {
+        status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const { error: hashUpdateError } = await supabase.from("evidence")
+      .update({ verified_sha256_hash: actualHash }).eq("id", evidence_id);
+    if (hashUpdateError) throw hashUpdateError;
 
     // 3. Parse evidence
     const parsedEvents = parseEvidence(content, evidence.filename, evidence.file_type);
 
     if (parsedEvents.length === 0) {
       // Mark as parsed even if no events found
-      await supabase
+      const { error: emptyUpdateError } = await supabase
         .from("evidence")
-        .update({ parsed: true })
+        .update({ parsed: true, analysis_status: "COMPLETED", analysis_completed_at: new Date().toISOString() })
         .eq("id", evidence_id);
+      if (emptyUpdateError) throw emptyUpdateError;
 
       return new Response(
         JSON.stringify({
@@ -669,9 +763,21 @@ Deno.serve(async (req: Request) => {
     }
 
     // 4. Insert events into database
-    const eventsToInsert = parsedEvents.map((ev) => ({
+    const eventsToInsert = await Promise.all(parsedEvents.map(async (ev, occurrence) => ({
       case_id,
       evidence_id,
+      analysis_fingerprint: await fingerprint({
+        occurrence,
+        timestamp: ev.timestamp,
+        event_type: ev.event_type,
+        username: ev.username,
+        source_ip: ev.source_ip,
+        destination_ip: ev.destination_ip,
+        source: ev.source,
+        description: ev.description,
+        severity: ev.severity,
+        raw_data: ev.raw_data,
+      }),
       timestamp: ev.timestamp,
       event_type: ev.event_type,
       username: ev.username,
@@ -681,48 +787,64 @@ Deno.serve(async (req: Request) => {
       description: ev.description,
       severity: ev.severity,
       raw_data: ev.raw_data,
-    }));
+    })));
 
     const { data: insertedEvents, error: insertError } = await supabase
       .from("events")
-      .insert(eventsToInsert)
-      .select("id, timestamp, event_type, username, source_ip, severity, source");
+      .upsert(eventsToInsert, {
+        onConflict: "evidence_id,analysis_fingerprint",
+        ignoreDuplicates: true,
+      })
+      .select("id, timestamp, event_type, username, source_ip, severity, source, raw_data");
 
     if (insertError) {
-      return new Response(
-        JSON.stringify({ error: "Failed to insert events: " + insertError.message }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      throw new Error("Failed to insert events: " + insertError.message);
     }
 
-    const storedEvents = (insertedEvents ?? []) as unknown as StoredEvent[];
+    const { data: storedEvidenceEvents, error: storedEventsError } = await supabase
+      .from("events")
+      .select("id, timestamp, event_type, username, source_ip, severity, source, raw_data")
+      .eq("evidence_id", evidence_id);
+    if (storedEventsError) throw storedEventsError;
+
+    const storedEvents = (storedEvidenceEvents ?? insertedEvents ?? []) as unknown as StoredEvent[];
 
     // 5. Run detection rules
     const newAlerts = runDetectionRules(storedEvents);
 
     // 6. Insert alerts
     if (newAlerts.length > 0) {
-      const alertsToInsert = newAlerts.map((a) => ({
+      const alertsToInsert = await Promise.all(newAlerts.map(async (a) => ({
         case_id,
+        analysis_fingerprint: await fingerprint({
+          detection_rule: a.detection_rule,
+          alert_type: a.alert_type,
+          related_event_ids: [...(a.related_event_ids ?? [])].sort(),
+        }),
         alert_type: a.alert_type,
         severity: a.severity,
         confidence: a.confidence,
         reason: a.reason,
         related_event_ids: a.related_event_ids,
         detection_rule: a.detection_rule,
-      }));
+      })));
 
-      await supabase.from("alerts").insert(alertsToInsert);
+      const { error: alertError } = await supabase.from("alerts").upsert(alertsToInsert, {
+        onConflict: "case_id,analysis_fingerprint",
+        ignoreDuplicates: true,
+      });
+      if (alertError) throw alertError;
     }
 
     // 7. Extract and upsert indicators
     const extractedIndicators = extractIndicators(storedEvents);
 
     // Fetch existing indicators for this case
-    const { data: existingIndicators } = await supabase
+    const { data: existingIndicators, error: existingIndicatorsError } = await supabase
       .from("indicators")
       .select("id, type, value, occurrence_count")
       .eq("case_id", case_id);
+    if (existingIndicatorsError) throw existingIndicatorsError;
 
     const existingMap: Record<string, string> = {};
     for (const ind of existingIndicators ?? []) {
@@ -736,35 +858,40 @@ Deno.serve(async (req: Request) => {
         const existing = (existingIndicators ?? []).find(
           (e) => e.type === ind.type && e.value === ind.value
         );
-        await supabase
+        const { error: indicatorUpdateError } = await supabase
           .from("indicators")
           .update({ occurrence_count: (existing?.occurrence_count ?? 0) + ind.occurrence_count })
           .eq("id", existingMap[key]);
+        if (indicatorUpdateError) throw indicatorUpdateError;
       } else {
-        await supabase.from("indicators").insert({
+        const { error: indicatorInsertError } = await supabase.from("indicators").insert({
           case_id,
           type: ind.type,
           value: ind.value,
           occurrence_count: ind.occurrence_count,
         });
+        if (indicatorInsertError) throw indicatorInsertError;
       }
     }
 
     // 8. Calculate risk score and update case
-    const { data: allCaseEvents } = await supabase
+    const { data: allCaseEvents, error: allCaseEventsError } = await supabase
       .from("events")
-      .select("id, event_type, username, source_ip, severity, source, timestamp")
+      .select("id, event_type, username, source_ip, severity, source, timestamp, raw_data")
       .eq("case_id", case_id);
+    if (allCaseEventsError) throw allCaseEventsError;
 
-    const { data: allCaseAlerts } = await supabase
+    const { data: allCaseAlerts, error: allCaseAlertsError } = await supabase
       .from("alerts")
       .select("severity")
       .eq("case_id", case_id);
+    if (allCaseAlertsError) throw allCaseAlertsError;
 
-    const { data: allCaseIndicators } = await supabase
+    const { data: allCaseIndicators, error: allCaseIndicatorsError } = await supabase
       .from("indicators")
       .select("id")
       .eq("case_id", case_id);
+    if (allCaseIndicatorsError) throw allCaseIndicatorsError;
 
     const allEventsForDetection = (allCaseEvents ?? []) as unknown as StoredEvent[];
     const allAlerts = runDetectionRules(allEventsForDetection);
@@ -774,22 +901,31 @@ Deno.serve(async (req: Request) => {
       allCaseIndicators?.length ?? 0
     );
 
-    await supabase
+    const { error: caseUpdateError } = await supabase
       .from("cases")
       .update({
         risk_level: riskScore.level,
         updated_at: new Date().toISOString(),
       })
       .eq("id", case_id);
+    if (caseUpdateError) throw caseUpdateError;
 
     // 9. Mark evidence as parsed
-    await supabase
+    const { error: evidenceUpdateError } = await supabase
       .from("evidence")
-      .update({ parsed: true })
+      .update({
+        parsed: true,
+        analysis_status: "COMPLETED",
+        analysis_error: null,
+        analysis_completed_at: new Date().toISOString(),
+        verified_sha256_hash: actualHash,
+      })
       .eq("id", evidence_id);
+    if (evidenceUpdateError) throw evidenceUpdateError;
 
     // 10. Write audit log
-    await supabase.from("audit_logs").insert({
+    const { error: auditError } = await supabase.from("audit_logs").insert({
+      user_id: callerData.user.id,
       action: "EVIDENCE_ANALYZED",
       resource: "evidence",
       resource_id: evidence_id,
@@ -801,6 +937,7 @@ Deno.serve(async (req: Request) => {
         risk_level: riskScore.level,
       },
     });
+    if (auditError) throw auditError;
 
     return new Response(
       JSON.stringify({
@@ -815,6 +952,17 @@ Deno.serve(async (req: Request) => {
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
+    if (processingEvidenceId) {
+      const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+      const supabaseUrl = Deno.env.get("SUPABASE_URL");
+      if (serviceRoleKey && supabaseUrl) {
+        const serviceClient = createClient(supabaseUrl, serviceRoleKey);
+        await serviceClient.from("evidence").update({
+          analysis_status: "FAILED",
+          analysis_error: message,
+        }).eq("id", processingEvidenceId);
+      }
+    }
     return new Response(
       JSON.stringify({ error: message }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }

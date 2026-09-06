@@ -43,12 +43,13 @@ export default function EvidencePanel({ evidence, caseId, onUploaded }: Props) {
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
       const { data: sessionData } = await supabase.auth.getSession()
       const accessToken = sessionData.session?.access_token
+      if (!accessToken) throw new Error('Your session has expired. Please sign in again.')
 
       const response = await fetch(`${supabaseUrl}/functions/v1/analyze-evidence`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${accessToken}`,
+          Authorization: 'Bearer ' + accessToken,
           apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
         },
         body: JSON.stringify({ evidence_id: evidenceId, case_id: caseId }),
@@ -98,6 +99,9 @@ export default function EvidencePanel({ evidence, caseId, onUploaded }: Props) {
     }
 
     setUploading(true)
+    let storagePath: string | null = null
+    let metadataInserted = false
+    const evidenceId = crypto.randomUUID()
 
     try {
       const buffer = await file.arrayBuffer()
@@ -106,17 +110,12 @@ export default function EvidencePanel({ evidence, caseId, onUploaded }: Props) {
       const sha256 = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('')
 
       const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
-      const storagePath = `${caseId}/${Date.now()}_${safeName}`
-
-      const { error: uploadError } = await supabase.storage
-        .from('evidence')
-        .upload(storagePath, file)
-
-      if (uploadError) throw uploadError
+      storagePath = `${caseId}/${evidenceId}_${safeName}`
 
       const { data: insertedEvidence, error: dbError } = await supabase
         .from('evidence')
         .insert({
+          id: evidenceId,
           case_id: caseId,
           filename: safeName,
           original_filename: file.name,
@@ -127,11 +126,19 @@ export default function EvidencePanel({ evidence, caseId, onUploaded }: Props) {
           uploaded_by: user?.id,
           integrity_status: 'VERIFIED',
           parsed: false,
+          analysis_status: 'PENDING',
         })
         .select()
         .single()
 
       if (dbError) throw dbError
+      metadataInserted = true
+
+      const { error: uploadError } = await supabase.storage
+        .from('evidence')
+        .upload(storagePath, file)
+
+      if (uploadError) throw uploadError
 
       await logAuditAction(user?.id ?? null, 'EVIDENCE_UPLOADED', 'evidence', insertedEvidence.id, {
         case_id: caseId,
@@ -145,6 +152,9 @@ export default function EvidencePanel({ evidence, caseId, onUploaded }: Props) {
       await analyzeEvidence(insertedEvidence.id)
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Upload failed'
+      if (storagePath && !metadataInserted) {
+        await supabase.storage.from('evidence').remove([storagePath])
+      }
       setError(msg)
     } finally {
       setUploading(false)
@@ -198,6 +208,7 @@ export default function EvidencePanel({ evidence, caseId, onUploaded }: Props) {
           <div className="space-y-3">
             {evidence.map((ev) => {
               const status = analysisStatus[ev.id]
+              const persistedStatus = ev.analysis_status ?? (ev.parsed ? 'COMPLETED' : 'PENDING')
               return (
                 <div key={ev.id} className="p-3 rounded-md bg-soc-bg hover:bg-soc-hover transition-colors">
                   <div className="flex items-center gap-3">
@@ -211,8 +222,14 @@ export default function EvidencePanel({ evidence, caseId, onUploaded }: Props) {
                           <Shield className="w-3 h-3 inline mr-1" />
                           {ev.integrity_status}
                         </span>
-                        {ev.parsed && (
+                        {persistedStatus === 'COMPLETED' && (
                           <span className="text-xs text-accent-blue">Parsed</span>
+                        )}
+                        {persistedStatus === 'FAILED' && (
+                          <span className="text-xs text-severity-critical">Analysis failed</span>
+                        )}
+                        {persistedStatus === 'PROCESSING' && (
+                          <span className="text-xs text-accent-blue">Analysis in progress</span>
                         )}
                       </div>
                       <div className="flex items-center gap-1 mt-1">
@@ -222,7 +239,7 @@ export default function EvidencePanel({ evidence, caseId, onUploaded }: Props) {
                         </span>
                       </div>
                     </div>
-                    {canUpload && !ev.parsed && !status && (
+                    {canUpload && !['COMPLETED', 'PROCESSING'].includes(persistedStatus) && !status && (
                       <button
                         onClick={() => analyzeEvidence(ev.id)}
                         className="btn-secondary text-xs whitespace-nowrap"

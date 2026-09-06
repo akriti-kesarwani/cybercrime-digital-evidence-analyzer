@@ -28,17 +28,9 @@ export default function NewCase() {
       return
     }
 
-    // Generate case number: CASE-2026-001 format
-    const year = new Date().getFullYear()
-    const { count } = await supabase
-      .from('cases')
-      .select('*', { count: 'exact', head: true })
-    const caseNumber = `CASE-${year}-${String((count ?? 0) + 1).padStart(3, '0')}`
-
     const { data, error: insertError } = await supabase
       .from('cases')
       .insert({
-        case_number: caseNumber,
         name: name.trim(),
         description: description.trim() || null,
         status,
@@ -54,7 +46,7 @@ export default function NewCase() {
       return
     }
 
-    await logAuditAction(user?.id ?? null, 'CASE_CREATED', 'cases', data.id, { case_number: caseNumber })
+    await logAuditAction(user?.id ?? null, 'CASE_CREATED', 'cases', data.id, { case_number: data.case_number })
     navigate(`/cases/${data.id}`)
   }
 
