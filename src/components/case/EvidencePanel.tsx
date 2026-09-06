@@ -28,6 +28,7 @@ export default function EvidencePanel({ evidence, caseId, onUploaded }: Props) {
   const { user, hasRole } = useAuth()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [analysisStatus, setAnalysisStatus] = useState<AnalysisStatus>({})
 
@@ -78,6 +79,7 @@ export default function EvidencePanel({ evidence, caseId, onUploaded }: Props) {
         ...prev,
         [evidenceId]: { status: 'error', message: msg },
       }))
+      onUploaded?.()
     }
   }
 
@@ -99,18 +101,30 @@ export default function EvidencePanel({ evidence, caseId, onUploaded }: Props) {
     }
 
     setUploading(true)
+    setUploadProgress(5)
     let storagePath: string | null = null
+    let storageUploaded = false
     let metadataInserted = false
     const evidenceId = crypto.randomUUID()
 
     try {
       const buffer = await file.arrayBuffer()
       const hashBuffer = await crypto.subtle.digest('SHA-256', buffer)
+      setUploadProgress(25)
       const hashArray = Array.from(new Uint8Array(hashBuffer))
       const sha256 = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('')
 
       const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
       storagePath = `${caseId}/${evidenceId}_${safeName}`
+
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('evidence')
+        .upload(storagePath, file)
+
+      if (uploadError) throw uploadError
+      if (!uploadData?.path) throw new Error('Storage upload did not return an object path')
+      storageUploaded = true
+      setUploadProgress(75)
 
       const { data: insertedEvidence, error: dbError } = await supabase
         .from('evidence')
@@ -122,7 +136,7 @@ export default function EvidencePanel({ evidence, caseId, onUploaded }: Props) {
           file_type: ext,
           file_size: file.size,
           sha256_hash: sha256,
-          storage_path: storagePath,
+          storage_path: uploadData.path,
           uploaded_by: user?.id,
           integrity_status: 'VERIFIED',
           parsed: false,
@@ -134,12 +148,6 @@ export default function EvidencePanel({ evidence, caseId, onUploaded }: Props) {
       if (dbError) throw dbError
       metadataInserted = true
 
-      const { error: uploadError } = await supabase.storage
-        .from('evidence')
-        .upload(storagePath, file)
-
-      if (uploadError) throw uploadError
-
       await logAuditAction(user?.id ?? null, 'EVIDENCE_UPLOADED', 'evidence', insertedEvidence.id, {
         case_id: caseId,
         filename: safeName,
@@ -150,14 +158,27 @@ export default function EvidencePanel({ evidence, caseId, onUploaded }: Props) {
 
       // Automatically trigger analysis after upload
       await analyzeEvidence(insertedEvidence.id)
+      setUploadProgress(100)
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Upload failed'
-      if (storagePath && !metadataInserted) {
-        await supabase.storage.from('evidence').remove([storagePath])
+      if (storagePath && storageUploaded && !metadataInserted) {
+        const { error: cleanupError } = await supabase.storage
+          .from('evidence')
+          .remove([storagePath])
+        if (cleanupError) {
+          console.error('Failed to remove orphaned evidence object:', cleanupError.message)
+        }
+      }
+      if (metadataInserted) {
+        await supabase
+          .from('evidence')
+          .update({ analysis_status: 'FAILED', analysis_error: msg })
+          .eq('id', evidenceId)
       }
       setError(msg)
     } finally {
       setUploading(false)
+      setUploadProgress(0)
       if (fileInputRef.current) fileInputRef.current.value = ''
     }
   }
@@ -173,7 +194,7 @@ export default function EvidencePanel({ evidence, caseId, onUploaded }: Props) {
           >
             <Upload className="w-8 h-8 text-soc-muted mx-auto mb-2" />
             <p className="text-sm text-soc-muted">
-              {uploading ? 'Uploading and hashing...' : 'Click to select a file'}
+              {uploading ? `Uploading and analyzing... ${uploadProgress}%` : 'Click to select a file'}
             </p>
             <p className="text-xs text-soc-muted mt-1">
               Allowed: .txt, .log, .csv, .json (max 10 MB)
