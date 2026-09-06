@@ -38,6 +38,7 @@ interface Stats {
   totalEvents: number
   totalAlerts: number
   openCases: number
+  highCriticalAlerts: number
 }
 
 export default function Dashboard() {
@@ -47,11 +48,13 @@ export default function Dashboard() {
     totalEvents: 0,
     totalAlerts: 0,
     openCases: 0,
+    highCriticalAlerts: 0,
   })
   const [recentCases, setRecentCases] = useState<Case[]>([])
   const [recentAlerts, setRecentAlerts] = useState<Alert[]>([])
   const [severityData, setSeverityData] = useState<{ name: string; value: number }[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     async function fetchDashboardData() {
@@ -63,6 +66,12 @@ export default function Dashboard() {
         supabase.from('events').select('id'),
         supabase.from('alerts').select('*'),
       ])
+      const queryError = casesRes.error ?? evidenceRes.error ?? eventsRes.error ?? alertsRes.error
+      if (queryError) {
+        setError(queryError.message)
+        setLoading(false)
+        return
+      }
 
       const cases = (casesRes.data ?? []) as Case[]
       const alerts = (alertsRes.data ?? []) as Alert[]
@@ -73,6 +82,7 @@ export default function Dashboard() {
         totalEvents: eventsRes.data?.length ?? 0,
         totalAlerts: alerts.length,
         openCases: cases.filter((c) => c.status === 'OPEN' || c.status === 'UNDER_INVESTIGATION').length,
+        highCriticalAlerts: alerts.filter((a) => a.severity === 'HIGH' || a.severity === 'CRITICAL').length,
       })
 
       setRecentCases(
@@ -107,6 +117,7 @@ export default function Dashboard() {
     { label: 'Evidence Files', value: stats.totalEvidence, icon: FileSearch, color: 'text-accent-cyan' },
     { label: 'Total Events', value: stats.totalEvents, icon: Activity, color: 'text-accent-green' },
     { label: 'Active Alerts', value: stats.totalAlerts, icon: Bell, color: 'text-severity-high' },
+    { label: 'High/Critical', value: stats.highCriticalAlerts, icon: AlertTriangle, color: 'text-severity-critical' },
   ]
 
   if (loading) {
@@ -115,6 +126,10 @@ export default function Dashboard() {
         <div className="w-8 h-8 border-2 border-soc-border border-t-accent-cyan rounded-full animate-spin"></div>
       </div>
     )
+  }
+
+  if (error) {
+    return <div className="card p-6 text-sm text-severity-critical">Unable to load dashboard data: {error}</div>
   }
 
   return (

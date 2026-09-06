@@ -14,6 +14,7 @@ interface Props {
 
 const ALLOWED_TYPES = ['.txt', '.log', '.csv', '.json']
 const MAX_SIZE = 10 * 1024 * 1024 // 10 MB
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 interface AnalysisStatus {
   [evidenceId: string]: {
@@ -108,6 +109,25 @@ export default function EvidencePanel({ evidence, caseId, onUploaded }: Props) {
     const evidenceId = crypto.randomUUID()
 
     try {
+      if (!UUID_PATTERN.test(caseId)) {
+        throw new Error('The selected case has an invalid identifier.')
+      }
+      if (!UUID_PATTERN.test(evidenceId)) {
+        throw new Error('Could not create a valid evidence identifier.')
+      }
+
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession()
+      if (sessionError) throw new Error(`Unable to verify your session: ${sessionError.message}`)
+      if (!session?.user) {
+        throw new Error('Your session has expired. Please sign in again.')
+      }
+      if (!hasRole('ADMIN', 'INVESTIGATOR')) {
+        throw new Error('You are not authorized to upload evidence.')
+      }
+
       const buffer = await file.arrayBuffer()
       const hashBuffer = await crypto.subtle.digest('SHA-256', buffer)
       setUploadProgress(25)
@@ -115,13 +135,33 @@ export default function EvidencePanel({ evidence, caseId, onUploaded }: Props) {
       const sha256 = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('')
 
       const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+      if (!safeName || safeName === '.' || safeName === '..' || safeName.includes('/')) {
+        throw new Error('The selected filename is invalid.')
+      }
       storagePath = `${caseId}/${evidenceId}_${safeName}`
+      if (
+        storagePath.startsWith('/') ||
+        storagePath.split('/')[0] !== caseId ||
+        !UUID_PATTERN.test(storagePath.split('/')[0])
+      ) {
+        throw new Error('The evidence storage path is invalid.')
+      }
 
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('evidence')
         .upload(storagePath, file)
 
-      if (uploadError) throw uploadError
+      if (uploadError) {
+        console.error('[EvidencePanel] Storage upload failed', {
+          operation: 'storage_upload',
+          error_message: uploadError.message,
+          error_name: uploadError.name,
+          error_statusCode: uploadError.statusCode,
+          uploadData,
+          storagePath,
+        })
+        throw uploadError
+      }
       if (!uploadData?.path) throw new Error('Storage upload did not return an object path')
       storageUploaded = true
       setUploadProgress(75)
@@ -137,7 +177,7 @@ export default function EvidencePanel({ evidence, caseId, onUploaded }: Props) {
           file_size: file.size,
           sha256_hash: sha256,
           storage_path: uploadData.path,
-          uploaded_by: user?.id,
+          uploaded_by: session.user.id,
           integrity_status: 'VERIFIED',
           parsed: false,
           analysis_status: 'PENDING',

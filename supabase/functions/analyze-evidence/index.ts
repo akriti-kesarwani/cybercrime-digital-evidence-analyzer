@@ -109,10 +109,14 @@ function parseWebLog(content: string, filename: string): ParsedEvent[] {
   const lines = content.split("\n").filter((l) => l.trim());
 
   for (const line of lines) {
-    // Format: 2026-09-01 10:05:45 10.0.0.15 GET /admin/dashboard 200
-    const match = line.match(
+    // Supports both positional and synthetic key/value web log formats.
+    const keyValueMatch = line.match(
+      /^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\s+ip=(\S+)\s+method=(\S+)\s+path=(\S+)\s+status=(\d+)(?:\s+user=(\S+))?$/
+    );
+    const positionalMatch = line.match(
       /^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\s+(\S+)\s+(\S+)\s+(\S+)\s+(\d+)(?:\s+(?:user=)?(\S+))?$/
     );
+    const match = keyValueMatch ?? positionalMatch;
     if (!match) continue;
 
     const [, timestamp, ip, method, path, statusCode, username] = match;
@@ -334,7 +338,7 @@ interface StoredEvent {
 function runDetectionRules(events: StoredEvent[]): DetectionAlert[] {
   const alerts: DetectionAlert[] = [];
 
-  // RULE 1: Repeated failed logins from same IP (5+ within 5 minutes)
+  // RULE 1: Repeated failed logins from same IP (4+ within 5 minutes)
   const failedByIp: Record<string, StoredEvent[]> = {};
   for (const ev of events) {
     if (ev.event_type === "LOGIN_FAILED" && ev.source_ip) {
@@ -349,7 +353,7 @@ function runDetectionRules(events: StoredEvent[]): DetectionAlert[] {
       (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
     );
 
-    // Sliding window: 5+ failures within 5 minutes
+    // Sliding window: 4+ failures within 5 minutes
     for (let i = 0; i < sorted.length; i++) {
       const windowStart = new Date(sorted[i].timestamp).getTime();
       const windowEnd = windowStart + 5 * 60 * 1000;
@@ -359,7 +363,7 @@ function runDetectionRules(events: StoredEvent[]): DetectionAlert[] {
           new Date(e.timestamp).getTime() <= windowEnd
       );
 
-      if (windowEvents.length >= 5) {
+      if (windowEvents.length >= 4) {
         alerts.push({
           alert_type: "Potential Brute Force",
           severity: "HIGH",
@@ -397,7 +401,7 @@ function runDetectionRules(events: StoredEvent[]): DetectionAlert[] {
       } else if (ev.event_type === "LOGIN_SUCCESS" && failedStreak >= 3) {
         alerts.push({
           alert_type: "Potential Account Compromise",
-          severity: "CRITICAL",
+          severity: "HIGH",
           confidence: Math.min(70 + failedStreak * 5, 95),
           reason: `${failedStreak} failed login attempts followed by successful login for user ${username}.`,
           related_event_ids: [...failedEvents.map((e) => e.id), ev.id],

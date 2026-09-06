@@ -127,8 +127,16 @@ export default function TimelinePanel({ events }: Props) {
                   <div className="flex items-center gap-4 mt-1.5 text-xs text-soc-muted flex-wrap">
                     {ev.username && <span>User: <span className="text-soc-text">{ev.username}</span></span>}
                     {ev.source_ip && <span>IP: <span className="text-soc-text font-mono">{ev.source_ip}</span></span>}
+                    {ev.destination_ip && <span>Destination: <span className="text-soc-text font-mono">{ev.destination_ip}</span></span>}
                     {ev.source && <span>Source: <span className="text-soc-text">{ev.source}</span></span>}
                   </div>
+                  {ev.raw_data && (
+                    <div className="flex items-center gap-3 mt-1 text-xs text-soc-muted flex-wrap">
+                      {typeof ev.raw_data.filename === 'string' && <span>File: <span className="text-soc-text">{ev.raw_data.filename}</span></span>}
+                      {typeof ev.raw_data.path === 'string' && <span>Path: <span className="text-soc-text">{ev.raw_data.path}</span></span>}
+                      {typeof ev.raw_data.action === 'string' && <span>Action: <span className="text-soc-text">{ev.raw_data.action}</span></span>}
+                    </div>
+                  )}
                   {ev.description && (
                     <p className="text-sm text-soc-muted mt-1">{ev.description}</p>
                   )}

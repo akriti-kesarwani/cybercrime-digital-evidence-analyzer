@@ -1,0 +1,9 @@
+2026-09-01 23:25:12 user=admin ip=10.0.0.15 status=FAILED
+2026-09-01 23:26:03 user=admin ip=10.0.0.15 status=FAILED
+2026-09-01 23:27:18 user=admin ip=10.0.0.15 status=FAILED
+2026-09-01 23:28:41 user=admin ip=10.0.0.15 status=FAILED
+2026-09-01 23:29:05 user=admin ip=10.0.0.15 status=SUCCESS
+2026-09-01 23:30:15 user=admin ip=10.0.0.15 status=SUCCESS
+2026-09-02 02:15:42 user=admin ip=10.0.0.15 status=SUCCESS
+2026-09-02 09:10:12 user=employee ip=10.0.0.20 status=SUCCESS
+2026-09-02 09:15:33 user=employee ip=10.0.0.20 status=SUCCESS

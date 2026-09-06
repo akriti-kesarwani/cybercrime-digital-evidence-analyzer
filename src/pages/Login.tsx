@@ -47,6 +47,10 @@ export default function Login() {
         setLoading(false)
         return
       }
+      setError('Account created. Check your email to confirm the account before signing in.')
+      setMode('login')
+      setLoading(false)
+      return
     } else {
       const { error } = await signIn(email, password)
       if (error) {
