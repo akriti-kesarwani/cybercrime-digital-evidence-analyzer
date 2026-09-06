@@ -1,0 +1,72 @@
+[
+  {
+    "timestamp": "2026-09-01 10:01:22",
+    "event_type": "LOGIN_FAILED",
+    "username": "admin",
+    "source_ip": "10.0.0.15",
+    "description": "Authentication failure for user admin"
+  },
+  {
+    "timestamp": "2026-09-01 10:02:11",
+    "event_type": "LOGIN_FAILED",
+    "username": "admin",
+    "source_ip": "10.0.0.15",
+    "description": "Authentication failure for user admin"
+  },
+  {
+    "timestamp": "2026-09-01 10:03:05",
+    "event_type": "LOGIN_FAILED",
+    "username": "admin",
+    "source_ip": "10.0.0.15",
+    "description": "Authentication failure for user admin"
+  },
+  {
+    "timestamp": "2026-09-01 10:04:17",
+    "event_type": "LOGIN_FAILED",
+    "username": "admin",
+    "source_ip": "10.0.0.15",
+    "description": "Authentication failure for user admin"
+  },
+  {
+    "timestamp": "2026-09-01 10:05:32",
+    "event_type": "LOGIN_SUCCESS",
+    "username": "admin",
+    "source_ip": "10.0.0.15",
+    "description": "Successful authentication for user admin"
+  },
+  {
+    "timestamp": "2026-09-01 10:08:20",
+    "event_type": "FILE_ACCESS",
+    "username": "admin",
+    "source_ip": "10.0.0.15",
+    "description": "Accessed sensitive file: users.csv"
+  },
+  {
+    "timestamp": "2026-09-01 10:10:20",
+    "event_type": "FILE_ACCESS",
+    "username": "admin",
+    "source_ip": "10.0.0.15",
+    "description": "Accessed sensitive file: passwords.txt"
+  },
+  {
+    "timestamp": "2026-09-01 10:12:20",
+    "event_type": "FILE_MODIFY",
+    "username": "admin",
+    "source_ip": "10.0.0.15",
+    "description": "Modified file: users.csv"
+  },
+  {
+    "timestamp": "2026-09-01 23:30:00",
+    "event_type": "LOGIN_SUCCESS",
+    "username": "admin",
+    "source_ip": "10.0.0.15",
+    "description": "Successful authentication outside business hours"
+  },
+  {
+    "timestamp": "2026-09-02 02:15:00",
+    "event_type": "LOGIN_SUCCESS",
+    "username": "admin",
+    "source_ip": "10.0.0.15",
+    "description": "Successful authentication at unusual time"
+  }
+]

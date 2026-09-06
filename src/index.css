@@ -1,0 +1,85 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  html, body, #root {
+    height: 100%;
+    width: 100%;
+  }
+
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    background-color: #0a0e1a;
+    color: #e2e8f0;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: #0a0e1a;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #2a3a4e;
+    border-radius: 4px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #3a4a5e;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-soc-card border border-soc-border rounded-lg;
+  }
+
+  .btn-primary {
+    @apply px-4 py-2 bg-accent-blue hover:bg-blue-600 text-white rounded-md font-medium transition-colors duration-200;
+  }
+
+  .btn-secondary {
+    @apply px-4 py-2 bg-soc-hover hover:bg-soc-border text-soc-text rounded-md font-medium transition-colors duration-200 border border-soc-border;
+  }
+
+  .btn-danger {
+    @apply px-4 py-2 bg-severity-critical hover:bg-red-600 text-white rounded-md font-medium transition-colors duration-200;
+  }
+
+  .input-field {
+    @apply w-full px-3 py-2 bg-soc-bg border border-soc-border rounded-md text-soc-text placeholder-soc-muted focus:outline-none focus:border-accent-blue focus:ring-1 focus:ring-accent-blue transition-colors;
+  }
+
+  .badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+
+  .badge-low {
+    @apply badge bg-blue-500/20 text-severity-low;
+  }
+
+  .badge-medium {
+    @apply badge bg-amber-500/20 text-severity-medium;
+  }
+
+  .badge-high {
+    @apply badge bg-orange-500/20 text-severity-high;
+  }
+
+  .badge-critical {
+    @apply badge bg-red-500/20 text-severity-critical;
+  }
+}

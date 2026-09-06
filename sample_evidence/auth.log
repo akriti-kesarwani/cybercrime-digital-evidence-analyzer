@@ -1,0 +1,17 @@
+2026-09-01 10:01:22 user=admin ip=10.0.0.15 status=FAILED
+2026-09-01 10:02:11 user=admin ip=10.0.0.15 status=FAILED
+2026-09-01 10:03:05 user=admin ip=10.0.0.15 status=FAILED
+2026-09-01 10:04:17 user=admin ip=10.0.0.15 status=FAILED
+2026-09-01 10:05:32 user=admin ip=10.0.0.15 status=SUCCESS
+2026-09-01 10:06:01 user=admin ip=10.0.0.15 status=LOGIN
+2026-09-01 10:15:00 user=jdoe ip=192.168.1.50 status=SUCCESS
+2026-09-01 10:20:00 user=jdoe ip=192.168.1.50 status=LOGOUT
+2026-09-01 11:00:00 user=service_account ip=10.0.0.1 status=SUCCESS
+2026-09-01 14:00:00 user=guest ip=10.0.0.15 status=FAILED
+2026-09-01 14:01:00 user=guest ip=10.0.0.15 status=FAILED
+2026-09-01 14:02:00 user=guest ip=10.0.0.15 status=FAILED
+2026-09-01 14:03:00 user=guest ip=10.0.0.15 status=FAILED
+2026-09-01 14:04:00 user=guest ip=10.0.0.15 status=FAILED
+2026-09-01 23:30:00 user=admin ip=10.0.0.15 status=SUCCESS
+2026-09-02 02:15:00 user=admin ip=10.0.0.15 status=SUCCESS
+2026-09-02 02:20:00 user=admin ip=10.0.0.15 status=LOGOUT

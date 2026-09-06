@@ -1,0 +1,12 @@
+timestamp,username,filename,action
+2026-09-01 10:08:20,admin,users.csv,READ
+2026-09-01 10:10:20,admin,passwords.txt,READ
+2026-09-01 10:12:20,admin,users.csv,MODIFIED
+2026-09-01 10:15:00,jdoe,report.pdf,READ
+2026-09-01 10:35:00,admin,config.yaml,READ
+2026-09-01 10:36:00,admin,config.yaml,MODIFIED
+2026-09-01 11:00:00,admin,database_backup.sql,READ
+2026-09-01 11:05:00,admin,database_backup.sql,DELETED
+2026-09-01 23:40:00,admin,users.csv,READ
+2026-09-02 02:16:00,admin,config.yaml,MODIFIED
+2026-09-02 02:17:00,admin,passwords.txt,READ
