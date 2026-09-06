@@ -28,9 +28,11 @@ export default function CaseDetail() {
   const [alerts, setAlerts] = useState<Alert[]>([])
   const [indicators, setIndicators] = useState<Indicator[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   async function refreshCaseData() {
     if (!id) return
+    setError(null)
     const [caseRes, evidenceRes, eventsRes, alertsRes, indicatorsRes] = await Promise.all([
       supabase.from('cases').select('*').eq('id', id).maybeSingle(),
       supabase.from('evidence').select('*').eq('case_id', id).order('uploaded_at', { ascending: false }),
@@ -39,6 +41,11 @@ export default function CaseDetail() {
       supabase.from('indicators').select('*').eq('case_id', id).order('occurrence_count', { ascending: false }),
     ])
 
+    const queryError = caseRes.error ?? evidenceRes.error ?? eventsRes.error ?? alertsRes.error ?? indicatorsRes.error
+    if (queryError) {
+      setError(queryError.message)
+      return
+    }
     if (caseRes.data) setCaseData(caseRes.data as Case)
     setEvidence((evidenceRes.data ?? []) as Evidence[])
     setEvents((eventsRes.data ?? []) as EventRecord[])
@@ -66,6 +73,13 @@ export default function CaseDetail() {
   }
 
   if (!caseData) {
+    if (error) {
+      return (
+        <div className="card p-6 text-sm text-severity-critical">
+          Unable to load this case: {error}
+        </div>
+      )
+    }
     return (
       <div className="text-center py-20">
         <p className="text-lg text-soc-muted">Case not found.</p>

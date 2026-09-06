@@ -6,10 +6,16 @@ import type { EventRecord } from '../types'
 export default function Timeline() {
   const [events, setEvents] = useState<EventRecord[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     async function fetchAll() {
-      const { data } = await supabase.from('events').select('*').order('timestamp', { ascending: false }).limit(100)
+      const { data, error: queryError } = await supabase.from('events').select('*').order('timestamp', { ascending: false }).limit(100)
+      if (queryError) {
+        setError(queryError.message)
+        setLoading(false)
+        return
+      }
       setEvents((data ?? []) as EventRecord[])
       setLoading(false)
     }
@@ -30,6 +36,8 @@ export default function Timeline() {
         <h1 className="text-2xl font-bold text-soc-text">Global Timeline</h1>
         <p className="text-sm text-soc-muted mt-1">Recent events across all cases (latest 100)</p>
       </div>
+
+      {error && <div className="card p-4 text-sm text-severity-critical">Unable to load timeline: {error}</div>}
 
       {events.length === 0 ? (
         <div className="card p-12 text-center">

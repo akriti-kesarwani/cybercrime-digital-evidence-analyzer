@@ -6,10 +6,16 @@ import type { Alert } from '../types'
 export default function Alerts() {
   const [alerts, setAlerts] = useState<Alert[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     async function fetchAll() {
-      const { data } = await supabase.from('alerts').select('*').order('created_at', { ascending: false })
+      const { data, error: queryError } = await supabase.from('alerts').select('*').order('created_at', { ascending: false })
+      if (queryError) {
+        setError(queryError.message)
+        setLoading(false)
+        return
+      }
       setAlerts((data ?? []) as Alert[])
       setLoading(false)
     }
@@ -30,6 +36,8 @@ export default function Alerts() {
         <h1 className="text-2xl font-bold text-soc-text">All Alerts</h1>
         <p className="text-sm text-soc-muted mt-1">All detected alerts across cases</p>
       </div>
+
+      {error && <div className="card p-4 text-sm text-severity-critical">Unable to load alerts: {error}</div>}
 
       {alerts.length === 0 ? (
         <div className="card p-12 text-center">

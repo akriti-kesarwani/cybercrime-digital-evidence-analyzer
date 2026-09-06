@@ -6,10 +6,16 @@ import type { Indicator } from '../types'
 export default function Indicators() {
   const [indicators, setIndicators] = useState<Indicator[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     async function fetchAll() {
-      const { data } = await supabase.from('indicators').select('*').order('occurrence_count', { ascending: false })
+      const { data, error: queryError } = await supabase.from('indicators').select('*').order('occurrence_count', { ascending: false })
+      if (queryError) {
+        setError(queryError.message)
+        setLoading(false)
+        return
+      }
       setIndicators((data ?? []) as Indicator[])
       setLoading(false)
     }
@@ -30,6 +36,8 @@ export default function Indicators() {
         <h1 className="text-2xl font-bold text-soc-text">All Indicators</h1>
         <p className="text-sm text-soc-muted mt-1">Indicators of compromise across all cases</p>
       </div>
+
+      {error && <div className="card p-4 text-sm text-severity-critical">Unable to load indicators: {error}</div>}
 
       {indicators.length === 0 ? (
         <div className="card p-12 text-center">

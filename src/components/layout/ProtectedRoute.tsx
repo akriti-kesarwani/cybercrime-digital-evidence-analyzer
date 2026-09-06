@@ -25,7 +25,20 @@ export default function ProtectedRoute({ children, allowedRoles }: ProtectedRout
     return <Navigate to="/login" replace />
   }
 
-  if (allowedRoles && profile && !allowedRoles.includes(profile.role)) {
+  if (!profile) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-soc-bg">
+        <div className="text-center">
+          <p className="text-lg font-semibold text-severity-high">Profile unavailable</p>
+          <p className="text-sm text-soc-muted mt-2">
+            Your account is authenticated but not authorized for this application.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  if (allowedRoles && !allowedRoles.includes(profile.role)) {
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-soc-bg">
         <div className="text-center">

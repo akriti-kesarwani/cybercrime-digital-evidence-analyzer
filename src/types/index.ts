@@ -61,6 +61,11 @@ export interface Evidence {
   uploaded_at: string
   integrity_status: IntegrityStatus
   parsed: boolean
+  analysis_status?: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED'
+  analysis_error?: string | null
+  analysis_started_at?: string | null
+  analysis_completed_at?: string | null
+  verified_sha256_hash?: string | null
   // Joined fields
   uploaded_by_profile?: Pick<Profile, 'name' | 'email'>
 }

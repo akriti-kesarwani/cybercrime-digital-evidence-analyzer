@@ -14,6 +14,8 @@ export default function ReportPanel({ caseData, evidence, events, alerts, indica
     window.print()
   }
 
+  const incompleteEvidence = evidence.filter((ev) => ev.analysis_status && ev.analysis_status !== 'COMPLETED')
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between print:hidden">
@@ -22,6 +24,13 @@ export default function ReportPanel({ caseData, evidence, events, alerts, indica
           <Printer className="w-4 h-4" /> Print / Save as PDF
         </button>
       </div>
+
+      {incompleteEvidence.length > 0 && (
+        <div className="card p-4 text-sm text-severity-high print:hidden">
+          Analysis is incomplete for {incompleteEvidence.length} evidence file(s). This report reflects only
+          the data currently stored in Supabase.
+        </div>
+      )}
 
       <div className="card p-8 max-w-4xl mx-auto bg-white text-gray-900 print:bg-white print:shadow-none print:border-0">
         {/* Header */}
@@ -40,6 +49,7 @@ export default function ReportPanel({ caseData, evidence, events, alerts, indica
               <tr><td className="py-1 font-medium text-gray-600">Status:</td><td>{caseData.status.replace('_', ' ')}</td></tr>
               <tr><td className="py-1 font-medium text-gray-600">Risk Level:</td><td>{caseData.risk_level || 'Not assessed'}</td></tr>
               <tr><td className="py-1 font-medium text-gray-600">Created:</td><td>{new Date(caseData.created_at).toLocaleString()}</td></tr>
+              <tr><td className="py-1 font-medium text-gray-600">Investigator:</td><td className="font-mono">{caseData.created_by}</td></tr>
               <tr><td className="py-1 font-medium text-gray-600">Last Updated:</td><td>{new Date(caseData.updated_at).toLocaleString()}</td></tr>
             </tbody>
           </table>
@@ -73,6 +83,7 @@ export default function ReportPanel({ caseData, evidence, events, alerts, indica
                   <th className="p-2 text-left">Size</th>
                   <th className="p-2 text-left">SHA-256 Hash</th>
                   <th className="p-2 text-left">Integrity</th>
+                  <th className="p-2 text-left">Analysis</th>
                 </tr>
               </thead>
               <tbody>
@@ -83,6 +94,7 @@ export default function ReportPanel({ caseData, evidence, events, alerts, indica
                     <td className="p-2">{(ev.file_size / 1024).toFixed(1)} KB</td>
                     <td className="p-2 font-mono text-xs">{ev.sha256_hash}</td>
                     <td className="p-2">{ev.integrity_status}</td>
+                    <td className="p-2">{ev.analysis_status ?? (ev.parsed ? 'COMPLETED' : 'PENDING')}</td>
                   </tr>
                 ))}
               </tbody>
